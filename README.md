@@ -25,16 +25,11 @@ A Kubeflow Pipelines project for the Telco Customer Churn dataset.
         └── eval.py
 ```
 
-## Pipeline
+## Kubeflow Pipeline Run
+<img source="kubeflow-pipeline-run1.png" alt="">
+<img source="kubeflow-pipeline-run2.png" alt="">
 
-1. `collect_data` — downloads the Telco Customer Churn dataset from Kaggle.
-2. `validate_data` — validates the schema and data quality.
-3. `clean_data` — removes duplicates, handles numeric values, and encodes categorical features.
-4. `feature_engineering` — creates engineered features, scales numeric features, and creates train/validation datasets.
-5. `train_model` — trains a Logistic Regression classifier.
-6. `evaluate_model` — evaluates the model and records accuracy, precision, recall, F1, and ROC-AUC.
 
-## Setup on EC2 with Kind
 
 ### Prerequisites
 
