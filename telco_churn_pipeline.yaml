@@ -464,58 +464,70 @@ deploymentSpec:
           ,\n            \"Credit card (automatic)\",\n        },\n        \"Churn\"\
           : {\n            \"Yes\",\n            \"No\",\n        },\n    }\n\n  \
           \  NUMERIC_COLUMNS = [\n        \"SeniorCitizen\",\n        \"tenure\",\n\
-          \        \"MonthlyCharges\",\n        \"TotalCharges\",\n    ]\n\n    input_path\
-          \ = Path(input_dataset.path)\n\n    logger.info(\"Loading dataset from:\
-          \ %s\", input_path)\n\n    try:\n        df = pd.read_csv(input_path)\n\
-          \    except Exception as e:\n        raise RuntimeError(f\"Failed to read\
-          \ dataset from {input_path}: {e}\")\n\n    logger.info(\n        \"Dataset\
-          \ shape: %s rows x %s columns\",\n        df.shape[0],\n        df.shape[1],\n\
-          \    )\n\n    errors = []\n    warnings = []\n\n    actual_columns = set(df.columns)\n\
+          \        \"MonthlyCharges\",\n    ]\n\n    input_path = Path(input_dataset.path)\n\
+          \n    logger.info(\"Loading dataset from: %s\", input_path)\n\n    try:\n\
+          \        df = pd.read_csv(input_path)\n    except Exception as e:\n    \
+          \    raise RuntimeError(\n            f\"Failed to read dataset from {input_path}:\
+          \ {e}\"\n        )\n\n    logger.info(\n        \"Dataset shape: %s rows\
+          \ x %s columns\",\n        df.shape[0],\n        df.shape[1],\n    )\n\n\
+          \    errors = []\n    warnings = []\n\n    actual_columns = set(df.columns)\n\
           \n    missing = set(REQUIRED_COLUMNS) - actual_columns\n    extra = actual_columns\
-          \ - set(REQUIRED_COLUMNS)\n\n    if missing:\n        errors.append(f\"\
-          Missing required columns: {sorted(missing)}\")\n\n    if extra:\n      \
-          \  warnings.append(f\"Unexpected columns found: {sorted(extra)}\")\n\n \
-          \   if df.empty:\n        errors.append(\"Dataset is empty (0 rows)\")\n\
-          \n    duplicate_count = int(df.duplicated().sum())\n\n    if duplicate_count\
-          \ > 0:\n        warnings.append(f\"{duplicate_count} duplicate rows found\"\
-          )\n\n    for col in REQUIRED_COLUMNS:\n        if col in actual_columns:\n\
-          \            null_count = int(df[col].isnull().sum())\n\n            if\
-          \ null_count > 0:\n                warnings.append(f\"Column '{col}' has\
-          \ {null_count} null values\")\n\n    for col, valid_values in CATEGORICAL_VALID_VALUES.items():\n\
-          \n        if col not in actual_columns:\n            continue\n\n      \
-          \  invalid = set(df[col].dropna().unique()) - valid_values\n\n        if\
-          \ invalid:\n            errors.append(f\"Column '{col}' has invalid values:\
-          \ \" f\"{sorted(invalid)}\")\n\n    for col in NUMERIC_COLUMNS:\n\n    \
-          \    if col not in actual_columns:\n            continue\n\n        converted\
-          \ = pd.to_numeric(\n            df[col],\n            errors=\"coerce\"\
-          ,\n        )\n\n        non_numeric = converted.isnull() & df[col].notna()\n\
-          \n        bad_rows = int(non_numeric.sum())\n\n        if bad_rows > 0:\n\
-          \            errors.append(f\"Column '{col}' contains \" f\"{bad_rows} non-numeric\
-          \ values\")\n\n    if \"TotalCharges\" in actual_columns:\n\n        blank_mask\
-          \ = df[\"TotalCharges\"].astype(str).str.strip() == \"\"\n\n        blank_count\
-          \ = int(blank_mask.sum())\n\n        if blank_count > 0:\n            warnings.append(\"\
-          Column 'TotalCharges' has \" f\"{blank_count} blank values\")\n\n    if\
-          \ \"SeniorCitizen\" in actual_columns:\n\n        senior_values = set(\n\
-          \            pd.to_numeric(\n                df[\"SeniorCitizen\"],\n  \
-          \              errors=\"coerce\",\n            )\n            .dropna()\n\
-          \            .unique()\n        )\n\n        invalid_senior = senior_values\
-          \ - {0.0, 1.0}\n\n        if invalid_senior:\n            errors.append(\n\
-          \                \"Column 'SeniorCitizen' has values \"\n              \
-          \  f\"outside {{0, 1}}: {sorted(invalid_senior)}\"\n            )\n\n  \
-          \  report = {\n        \"file\": input_dataset.uri,\n        \"total_rows\"\
-          : int(df.shape[0]),\n        \"total_columns\": int(df.shape[1]),\n    \
-          \    \"duplicates\": duplicate_count,\n        \"is_valid\": len(errors)\
-          \ == 0,\n        \"errors\": errors,\n        \"warnings\": warnings,\n\
-          \    }\n\n    report_path = Path(validation_report.path)\n    report_path.parent.mkdir(parents=True,\
-          \ exist_ok=True)\n\n    report_path.write_text(json.dumps(report, indent=2))\n\
-          \n    logger.info(\n        \"Validation report saved to: %s\",\n      \
-          \  report_path,\n    )\n\n    if errors:\n        logger.error(\n      \
-          \      \"Validation FAILED with %d error(s)\",\n            len(errors),\n\
-          \        )\n\n        for error in errors:\n            logger.error(\"\
-          ERROR: %s\", error)\n\n        raise ValueError(\n            \"Dataset\
-          \ validation failed. \" \"See validation report for details.\"\n       \
-          \ )\n\n    logger.info(\"Validation PASSED\")\n\n    for warning in warnings:\n\
-          \        logger.warning(\"WARN: %s\", warning)\n\n"
+          \ - set(REQUIRED_COLUMNS)\n\n    if missing:\n        errors.append(\n \
+          \           f\"Missing required columns: {sorted(missing)}\"\n        )\n\
+          \n    if extra:\n        warnings.append(\n            f\"Unexpected columns\
+          \ found: {sorted(extra)}\"\n        )\n\n    if df.empty:\n        errors.append(\"\
+          Dataset is empty (0 rows)\")\n\n    duplicate_count = int(df.duplicated().sum())\n\
+          \n    if duplicate_count > 0:\n        warnings.append(\n            f\"\
+          {duplicate_count} duplicate rows found\"\n        )\n\n    for col in REQUIRED_COLUMNS:\n\
+          \        if col not in actual_columns:\n            continue\n\n       \
+          \ null_count = int(df[col].isnull().sum())\n\n        if null_count > 0:\n\
+          \            warnings.append(\n                f\"Column '{col}' has {null_count}\
+          \ null values\"\n            )\n\n    for col, valid_values in CATEGORICAL_VALID_VALUES.items():\n\
+          \        if col not in actual_columns:\n            continue\n\n       \
+          \ invalid = (\n            set(df[col].dropna().unique())\n            -\
+          \ valid_values\n        )\n\n        if invalid:\n            errors.append(\n\
+          \                f\"Column '{col}' has invalid values: \"\n            \
+          \    f\"{sorted(invalid)}\"\n            )\n\n    for col in NUMERIC_COLUMNS:\n\
+          \        if col not in actual_columns:\n            continue\n\n       \
+          \ converted = pd.to_numeric(\n            df[col],\n            errors=\"\
+          coerce\",\n        )\n\n        non_numeric = (\n            converted.isna()\n\
+          \            & df[col].notna()\n        )\n\n        bad_rows = int(non_numeric.sum())\n\
+          \n        if bad_rows > 0:\n            errors.append(\n               \
+          \ f\"Column '{col}' contains \"\n                f\"{bad_rows} non-numeric\
+          \ values\"\n            )\n\n    if \"TotalCharges\" in actual_columns:\n\
+          \        total_charges = df[\"TotalCharges\"].astype(str).str.strip()\n\n\
+          \        blank_mask = total_charges == \"\"\n        blank_count = int(blank_mask.sum())\n\
+          \n        if blank_count > 0:\n            warnings.append(\n          \
+          \      f\"Column 'TotalCharges' has \"\n                f\"{blank_count}\
+          \ blank values\"\n            )\n\n        non_numeric_mask = (\n      \
+          \      ~blank_mask\n            & pd.to_numeric(\n                df[\"\
+          TotalCharges\"],\n                errors=\"coerce\",\n            ).isna()\n\
+          \        )\n\n        non_numeric_count = int(non_numeric_mask.sum())\n\n\
+          \        if non_numeric_count > 0:\n            errors.append(\n       \
+          \         \"Column 'TotalCharges' contains \"\n                f\"{non_numeric_count}\
+          \ invalid non-numeric values\"\n            )\n\n    if \"SeniorCitizen\"\
+          \ in actual_columns:\n        senior_values = set(\n            pd.to_numeric(\n\
+          \                df[\"SeniorCitizen\"],\n                errors=\"coerce\"\
+          ,\n            )\n            .dropna()\n            .unique()\n       \
+          \ )\n\n        invalid_senior = senior_values - {0, 1}\n\n        if invalid_senior:\n\
+          \            errors.append(\n                \"Column 'SeniorCitizen' has\
+          \ values \"\n                f\"outside {{0, 1}}: \"\n                f\"\
+          {sorted(invalid_senior)}\"\n            )\n\n    report = {\n        \"\
+          file\": input_dataset.uri,\n        \"total_rows\": int(df.shape[0]),\n\
+          \        \"total_columns\": int(df.shape[1]),\n        \"duplicates\": duplicate_count,\n\
+          \        \"is_valid\": len(errors) == 0,\n        \"errors\": errors,\n\
+          \        \"warnings\": warnings,\n    }\n\n    report_path = Path(validation_report.path)\n\
+          \    report_path.parent.mkdir(\n        parents=True,\n        exist_ok=True,\n\
+          \    )\n\n    report_path.write_text(\n        json.dumps(report, indent=2)\n\
+          \    )\n\n    logger.info(\n        \"Validation report saved to: %s\",\n\
+          \        report_path,\n    )\n\n    if errors:\n        logger.error(\n\
+          \            \"Validation FAILED with %d error(s)\",\n            len(errors),\n\
+          \        )\n\n        for error in errors:\n            logger.error(\n\
+          \                \"ERROR: %s\",\n                error,\n            )\n\
+          \n        raise ValueError(\n            \"Dataset validation failed. \"\
+          \n            \"See validation report for details.\"\n        )\n\n    logger.info(\"\
+          Validation PASSED\")\n\n    for warning in warnings:\n        logger.warning(\n\
+          \            \"WARN: %s\",\n            warning,\n        )\n\n"
         image: python:3.12-slim
 pipelineInfo:
   name: telco-churn-pipeline

@@ -121,7 +121,6 @@ def validate_data(
         "SeniorCitizen",
         "tenure",
         "MonthlyCharges",
-        "TotalCharges",
     ]
 
     input_path = Path(input_dataset.path)
@@ -131,7 +130,9 @@ def validate_data(
     try:
         df = pd.read_csv(input_path)
     except Exception as e:
-        raise RuntimeError(f"Failed to read dataset from {input_path}: {e}")
+        raise RuntimeError(
+            f"Failed to read dataset from {input_path}: {e}"
+        )
 
     logger.info(
         "Dataset shape: %s rows x %s columns",
@@ -148,10 +149,14 @@ def validate_data(
     extra = actual_columns - set(REQUIRED_COLUMNS)
 
     if missing:
-        errors.append(f"Missing required columns: {sorted(missing)}")
+        errors.append(
+            f"Missing required columns: {sorted(missing)}"
+        )
 
     if extra:
-        warnings.append(f"Unexpected columns found: {sorted(extra)}")
+        warnings.append(
+            f"Unexpected columns found: {sorted(extra)}"
+        )
 
     if df.empty:
         errors.append("Dataset is empty (0 rows)")
@@ -159,27 +164,37 @@ def validate_data(
     duplicate_count = int(df.duplicated().sum())
 
     if duplicate_count > 0:
-        warnings.append(f"{duplicate_count} duplicate rows found")
+        warnings.append(
+            f"{duplicate_count} duplicate rows found"
+        )
 
     for col in REQUIRED_COLUMNS:
-        if col in actual_columns:
-            null_count = int(df[col].isnull().sum())
-
-            if null_count > 0:
-                warnings.append(f"Column '{col}' has {null_count} null values")
-
-    for col, valid_values in CATEGORICAL_VALID_VALUES.items():
-
         if col not in actual_columns:
             continue
 
-        invalid = set(df[col].dropna().unique()) - valid_values
+        null_count = int(df[col].isnull().sum())
+
+        if null_count > 0:
+            warnings.append(
+                f"Column '{col}' has {null_count} null values"
+            )
+
+    for col, valid_values in CATEGORICAL_VALID_VALUES.items():
+        if col not in actual_columns:
+            continue
+
+        invalid = (
+            set(df[col].dropna().unique())
+            - valid_values
+        )
 
         if invalid:
-            errors.append(f"Column '{col}' has invalid values: " f"{sorted(invalid)}")
+            errors.append(
+                f"Column '{col}' has invalid values: "
+                f"{sorted(invalid)}"
+            )
 
     for col in NUMERIC_COLUMNS:
-
         if col not in actual_columns:
             continue
 
@@ -188,24 +203,48 @@ def validate_data(
             errors="coerce",
         )
 
-        non_numeric = converted.isnull() & df[col].notna()
+        non_numeric = (
+            converted.isna()
+            & df[col].notna()
+        )
 
         bad_rows = int(non_numeric.sum())
 
         if bad_rows > 0:
-            errors.append(f"Column '{col}' contains " f"{bad_rows} non-numeric values")
+            errors.append(
+                f"Column '{col}' contains "
+                f"{bad_rows} non-numeric values"
+            )
 
     if "TotalCharges" in actual_columns:
+        total_charges = df["TotalCharges"].astype(str).str.strip()
 
-        blank_mask = df["TotalCharges"].astype(str).str.strip() == ""
-
+        blank_mask = total_charges == ""
         blank_count = int(blank_mask.sum())
 
         if blank_count > 0:
-            warnings.append("Column 'TotalCharges' has " f"{blank_count} blank values")
+            warnings.append(
+                f"Column 'TotalCharges' has "
+                f"{blank_count} blank values"
+            )
+
+        non_numeric_mask = (
+            ~blank_mask
+            & pd.to_numeric(
+                df["TotalCharges"],
+                errors="coerce",
+            ).isna()
+        )
+
+        non_numeric_count = int(non_numeric_mask.sum())
+
+        if non_numeric_count > 0:
+            errors.append(
+                "Column 'TotalCharges' contains "
+                f"{non_numeric_count} invalid non-numeric values"
+            )
 
     if "SeniorCitizen" in actual_columns:
-
         senior_values = set(
             pd.to_numeric(
                 df["SeniorCitizen"],
@@ -215,12 +254,13 @@ def validate_data(
             .unique()
         )
 
-        invalid_senior = senior_values - {0.0, 1.0}
+        invalid_senior = senior_values - {0, 1}
 
         if invalid_senior:
             errors.append(
                 "Column 'SeniorCitizen' has values "
-                f"outside {{0, 1}}: {sorted(invalid_senior)}"
+                f"outside {{0, 1}}: "
+                f"{sorted(invalid_senior)}"
             )
 
     report = {
@@ -234,9 +274,14 @@ def validate_data(
     }
 
     report_path = Path(validation_report.path)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    report_path.write_text(json.dumps(report, indent=2))
+    report_path.write_text(
+        json.dumps(report, indent=2)
+    )
 
     logger.info(
         "Validation report saved to: %s",
@@ -250,13 +295,20 @@ def validate_data(
         )
 
         for error in errors:
-            logger.error("ERROR: %s", error)
+            logger.error(
+                "ERROR: %s",
+                error,
+            )
 
         raise ValueError(
-            "Dataset validation failed. " "See validation report for details."
+            "Dataset validation failed. "
+            "See validation report for details."
         )
 
     logger.info("Validation PASSED")
 
     for warning in warnings:
-        logger.warning("WARN: %s", warning)
+        logger.warning(
+            "WARN: %s",
+            warning,
+        )
