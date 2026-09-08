@@ -1,0 +1,618 @@
+# PIPELINE DEFINITION
+# Name: telco-churn-pipeline
+components:
+  comp-clean-data:
+    executorLabel: exec-clean-data
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        validation_report:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-collect-data:
+    executorLabel: exec-collect-data
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        validation_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+  comp-feature-engineering:
+    executorLabel: exec-feature-engineering
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        train_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        validation_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        train_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-validate-data:
+    executorLabel: exec-validate-data
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        validation_report:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-clean-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - clean_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef clean_data(\n    input_dataset: Input[Dataset],\n    validation_report:\
+          \ Input[Artifact],\n    output_dataset: Output[Dataset],\n):\n    \"\"\"\
+          \n    Clean the Telco Customer Churn dataset.\n    \"\"\"\n    import json\n\
+          \    import logging\n    from pathlib import Path\n\n    import pandas as\
+          \ pd\n\n    logging.basicConfig(\n        level=logging.INFO,\n        format=\"\
+          %(asctime)s | %(levelname)s | %(message)s\",\n    )\n    logger = logging.getLogger(__name__)\n\
+          \n    NUMERIC_COLUMNS = [\n        \"SeniorCitizen\",\n        \"tenure\"\
+          ,\n        \"MonthlyCharges\",\n        \"TotalCharges\",\n    ]\n\n   \
+          \ YES_NO_COLUMNS = [\n        \"Partner\",\n        \"Dependents\",\n  \
+          \      \"PhoneService\",\n        \"PaperlessBilling\",\n        \"Churn\"\
+          ,\n        \"OnlineSecurity\",\n        \"OnlineBackup\",\n        \"DeviceProtection\"\
+          ,\n        \"TechSupport\",\n        \"StreamingTV\",\n        \"StreamingMovies\"\
+          ,\n        \"MultipleLines\",\n    ]\n\n    ONE_HOT_COLUMNS = [\n      \
+          \  \"gender\",\n        \"InternetService\",\n        \"Contract\",\n  \
+          \      \"PaymentMethod\",\n    ]\n\n    # Read validation report.\n    report_path\
+          \ = Path(validation_report.path)\n\n    report = json.loads(report_path.read_text())\n\
+          \n    if not report[\"is_valid\"]:\n        raise ValueError(\n        \
+          \    \"Cannot clean invalid dataset. \" f\"Validation errors: {report['errors']}\"\
+          \n        )\n\n    logger.info(\"Validation passed. Starting cleaning.\"\
+          )\n\n    input_path = Path(input_dataset.path)\n\n    df = pd.read_csv(input_path)\n\
+          \n    logger.info(\n        \"Raw shape: %s\",\n        df.shape,\n    )\n\
+          \n    # Remove ID.\n    if \"customerID\" in df.columns:\n        df = df.drop(columns=[\"\
+          customerID\"])\n\n    # Remove duplicate rows.\n    duplicate_count = int(df.duplicated().sum())\n\
+          \n    if duplicate_count:\n        df = df.drop_duplicates()\n\n       \
+          \ logger.info(\n            \"Dropped %d duplicate rows\",\n           \
+          \ duplicate_count,\n        )\n\n    # Convert numeric columns.\n    for\
+          \ column in NUMERIC_COLUMNS:\n\n        if column in df.columns:\n\n   \
+          \         df[column] = pd.to_numeric(\n                df[column],\n   \
+          \             errors=\"coerce\",\n            )\n\n    # Handle missing\
+          \ numeric values.\n    before = len(df)\n\n    df = df.dropna(\n       \
+          \ subset=[column for column in NUMERIC_COLUMNS if column in df.columns]\n\
+          \    )\n\n    dropped = before - len(df)\n\n    if dropped:\n        logger.info(\n\
+          \            \"Dropped %d rows with missing numeric values\",\n        \
+          \    dropped,\n        )\n\n    # Encode Yes/No columns.\n    for column\
+          \ in YES_NO_COLUMNS:\n\n        if column not in df.columns:\n         \
+          \   continue\n\n        mapping = {\n            \"Yes\": 1,\n         \
+          \   \"No\": 0,\n            \"No internet service\": 0,\n            \"\
+          No phone service\": 0,\n        }\n\n        df[column] = df[column].map(mapping).astype(int)\n\
+          \n    # One-hot encode remaining categorical columns.\n    one_hot_columns\
+          \ = [column for column in ONE_HOT_COLUMNS if column in df.columns]\n\n \
+          \   df = pd.get_dummies(\n        df,\n        columns=one_hot_columns,\n\
+          \        dtype=int,\n    )\n\n    logger.info(\n        \"One-hot encoded:\
+          \ %s\",\n        one_hot_columns,\n    )\n\n    if df.isna().any().any():\n\
+          \        raise ValueError(\"Cleaned dataset still contains missing values.\"\
+          )\n\n    output_path = Path(output_dataset.path)\n    output_path.parent.mkdir(\n\
+          \        parents=True,\n        exist_ok=True,\n    )\n\n    df.to_csv(\n\
+          \        output_path,\n        index=False,\n    )\n\n    logger.info(\n\
+          \        \"Cleaned dataset saved to: %s\",\n        output_path,\n    )\n\
+          \n    logger.info(\n        \"Cleaned shape: %s\",\n        df.shape,\n\
+          \    )\n\n"
+        image: python:3.12-slim
+    exec-collect-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - collect_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kagglehub' \
+          \ &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef collect_data(output_dataset: Output[Dataset]):\n    \"\"\"\n\
+          \    Download the Telco Customer Churn dataset from Kaggle.\n\n    Produces:\n\
+          \        output_dataset: Raw Telco Customer Churn CSV.\n    \"\"\"\n   \
+          \ import logging\n    import shutil\n    from pathlib import Path\n\n  \
+          \  import kagglehub\n\n    logging.basicConfig(\n        level=logging.INFO,\n\
+          \        format=\"%(asctime)s | %(levelname)s | %(message)s\",\n    )\n\
+          \    logger = logging.getLogger(__name__)\n\n    DATASET_HANDLE = \"blastchar/telco-customer-churn\"\
+          \n    DATASET_FILENAME = \"WA_Fn-UseC_-Telco-Customer-Churn.csv\"\n\n  \
+          \  download_dir = Path(output_dataset.path).parent / \"kaggle_download\"\
+          \n    download_dir.mkdir(parents=True, exist_ok=True)\n\n    logger.info(\"\
+          Downloading dataset: %s\", DATASET_HANDLE)\n\n    downloaded_path = kagglehub.dataset_download(\n\
+          \        DATASET_HANDLE,\n        output_dir=str(download_dir),\n    )\n\
+          \n    downloaded_path = Path(downloaded_path)\n\n    logger.info(\n    \
+          \    \"Kaggle download location: %s\",\n        downloaded_path,\n    )\n\
+          \n    csv_candidates = list(downloaded_path.rglob(DATASET_FILENAME))\n\n\
+          \    if not csv_candidates:\n        raise FileNotFoundError(\n        \
+          \    f\"Could not find {DATASET_FILENAME} after downloading \"\n       \
+          \     f\"{DATASET_HANDLE}. Downloaded path: {downloaded_path}\"\n      \
+          \  )\n\n    source_csv = csv_candidates[0]\n\n    destination = Path(output_dataset.path)\n\
+          \    destination.parent.mkdir(parents=True, exist_ok=True)\n\n    shutil.copy2(source_csv,\
+          \ destination)\n\n    logger.info(\n        \"Raw dataset saved to: %s\"\
+          ,\n        destination,\n    )\n\n"
+        image: python:3.12-slim
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    model: Input[Model],\n    validation_dataset:\
+          \ Input[Dataset],\n    metrics: Output[Metrics],\n):\n    \"\"\"\n    Evaluate\
+          \ the trained churn classification model.\n    \"\"\"\n    import logging\n\
+          \n    import joblib\n    import pandas as pd\n    from sklearn.metrics import\
+          \ (\n        accuracy_score,\n        f1_score,\n        precision_score,\n\
+          \        recall_score,\n        roc_auc_score,\n    )\n\n    logging.basicConfig(\n\
+          \        level=logging.INFO,\n        format=\"%(asctime)s | %(levelname)s\
+          \ | %(message)s\",\n    )\n\n    logger = logging.getLogger(__name__)\n\n\
+          \    TARGET = \"Churn\"\n\n    classifier = joblib.load(model.path)\n\n\
+          \    val_df = pd.read_csv(validation_dataset.path)\n\n    X_val = val_df.drop(columns=[TARGET])\n\
+          \n    y_val = val_df[TARGET]\n\n    logger.info(\n        \"Validation dataset:\
+          \ %s\",\n        X_val.shape,\n    )\n\n    y_pred = classifier.predict(X_val)\n\
+          \n    y_prob = classifier.predict_proba(X_val)[:, 1]\n\n    accuracy = float(\n\
+          \        accuracy_score(\n            y_val,\n            y_pred,\n    \
+          \    )\n    )\n\n    precision = float(\n        precision_score(\n    \
+          \        y_val,\n            y_pred,\n            zero_division=0,\n   \
+          \     )\n    )\n\n    recall = float(\n        recall_score(\n         \
+          \   y_val,\n            y_pred,\n            zero_division=0,\n        )\n\
+          \    )\n\n    f1 = float(\n        f1_score(\n            y_val,\n     \
+          \       y_pred,\n            zero_division=0,\n        )\n    )\n\n    roc_auc\
+          \ = float(\n        roc_auc_score(\n            y_val,\n            y_prob,\n\
+          \        )\n    )\n\n    logger.info(\n        \"Accuracy: %.4f\",\n   \
+          \     accuracy,\n    )\n\n    logger.info(\n        \"Precision: %.4f\"\
+          ,\n        precision,\n    )\n\n    logger.info(\n        \"Recall: %.4f\"\
+          ,\n        recall,\n    )\n\n    logger.info(\n        \"F1: %.4f\",\n \
+          \       f1,\n    )\n\n    logger.info(\n        \"ROC-AUC: %.4f\",\n   \
+          \     roc_auc,\n    )\n\n    metrics.log_metric(\n        \"accuracy\",\n\
+          \        accuracy,\n    )\n\n    metrics.log_metric(\n        \"precision\"\
+          ,\n        precision,\n    )\n\n    metrics.log_metric(\n        \"recall\"\
+          ,\n        recall,\n    )\n\n    metrics.log_metric(\n        \"f1\",\n\
+          \        f1,\n    )\n\n    metrics.log_metric(\n        \"roc_auc\",\n \
+          \       roc_auc,\n    )\n\n"
+        image: python:3.12-slim
+    exec-feature-engineering:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - feature_engineering
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef feature_engineering(\n    input_dataset: Input[Dataset],\n  \
+          \  train_dataset: Output[Dataset],\n    validation_dataset: Output[Dataset],\n\
+          ):\n    \"\"\"\n    Feature engineering and train/validation split.\n  \
+          \  \"\"\"\n    import logging\n\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n    from sklearn.preprocessing import StandardScaler\n\
+          \n    logging.basicConfig(\n        level=logging.INFO,\n        format=\"\
+          %(asctime)s | %(levelname)s | %(message)s\",\n    )\n\n    logger = logging.getLogger(__name__)\n\
+          \n    TARGET = \"Churn\"\n\n    SERVICE_COLUMNS = [\n        \"OnlineSecurity\"\
+          ,\n        \"OnlineBackup\",\n        \"DeviceProtection\",\n        \"\
+          TechSupport\",\n        \"StreamingTV\",\n        \"StreamingMovies\",\n\
+          \    ]\n\n    df = pd.read_csv(input_dataset.path)\n\n    logger.info(\n\
+          \        \"Loaded dataset: %s\",\n        df.shape,\n    )\n\n    # -------------------------\n\
+          \    # Feature engineering\n    # -------------------------\n\n    tenure_bins\
+          \ = [\n        0,\n        12,\n        24,\n        48,\n        60,\n\
+          \        72,\n    ]\n\n    tenure_labels = [\n        0,\n        1,\n \
+          \       2,\n        3,\n        4,\n    ]\n\n    df[\"tenure_group\"] =\
+          \ pd.cut(\n        df[\"tenure\"],\n        bins=tenure_bins,\n        labels=tenure_labels,\n\
+          \        include_lowest=True,\n    ).astype(int)\n\n    df[\"avg_monthly_charge\"\
+          ] = df[\"TotalCharges\"] / df[\"tenure\"].replace(0, 1)\n\n    active_services\
+          \ = [column for column in SERVICE_COLUMNS if column in df.columns]\n\n \
+          \   df[\"service_count\"] = df[active_services].sum(axis=1)\n\n    df[\"\
+          monthly_charge_x_tenure\"] = df[\"MonthlyCharges\"] * df[\"tenure\"]\n\n\
+          \    # -------------------------\n    # Split\n    # -------------------------\n\
+          \n    y = df[TARGET]\n\n    X = df.drop(columns=[TARGET])\n\n    X_train,\
+          \ X_val, y_train, y_val = train_test_split(\n        X,\n        y,\n  \
+          \      test_size=0.2,\n        random_state=42,\n        stratify=y,\n \
+          \   )\n\n    logger.info(\n        \"Train: %s | Validation: %s\",\n   \
+          \     X_train.shape,\n        X_val.shape,\n    )\n\n    # -------------------------\n\
+          \    # Scaling\n    # -------------------------\n\n    scaler = StandardScaler()\n\
+          \n    numeric_columns = X_train.select_dtypes(\n        include=[\"int64\"\
+          , \"float64\"]\n    ).columns.tolist()\n\n    X_train = X_train.copy()\n\
+          \    X_val = X_val.copy()\n\n    X_train[numeric_columns] = scaler.fit_transform(X_train[numeric_columns])\n\
+          \n    X_val[numeric_columns] = scaler.transform(X_val[numeric_columns])\n\
+          \n    # -------------------------\n    # Save\n    # -------------------------\n\
+          \n    train_df = pd.concat(\n        [X_train, y_train],\n        axis=1,\n\
+          \    )\n\n    val_df = pd.concat(\n        [X_val, y_val],\n        axis=1,\n\
+          \    )\n\n    train_df.to_csv(\n        train_dataset.path,\n        index=False,\n\
+          \    )\n\n    validation_dataset_path = validation_dataset.path\n\n    val_df.to_csv(\n\
+          \        validation_dataset_path,\n        index=False,\n    )\n\n    logger.info(\n\
+          \        \"Training dataset saved to: %s\",\n        train_dataset.path,\n\
+          \    )\n\n    logger.info(\n        \"Validation dataset saved to: %s\"\
+          ,\n        validation_dataset_path,\n    )\n\n"
+        image: python:3.12-slim
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    train_dataset: Input[Dataset],\n    model:\
+          \ Output[Model],\n):\n    \"\"\"\n    Train a Logistic Regression model\n\
+          \    for Telco Customer Churn classification.\n    \"\"\"\n    import json\n\
+          \    import logging\n    from pathlib import Path\n\n    import joblib\n\
+          \    import pandas as pd\n    from sklearn.linear_model import LogisticRegression\n\
+          \n    logging.basicConfig(\n        level=logging.INFO,\n        format=\"\
+          %(asctime)s | %(levelname)s | %(message)s\",\n    )\n\n    logger = logging.getLogger(__name__)\n\
+          \n    TARGET = \"Churn\"\n\n    train_df = pd.read_csv(train_dataset.path)\n\
+          \n    X_train = train_df.drop(columns=[TARGET])\n\n    y_train = train_df[TARGET]\n\
+          \n    logger.info(\n        \"Training data: %s\",\n        X_train.shape,\n\
+          \    )\n\n    classifier = LogisticRegression(\n        max_iter=1000,\n\
+          \        random_state=42,\n    )\n\n    classifier.fit(\n        X_train,\n\
+          \        y_train,\n    )\n\n    logger.info(\"Logistic Regression trained\
+          \ successfully\")\n\n    model_path = Path(model.path)\n    model_path.parent.mkdir(\n\
+          \        parents=True,\n        exist_ok=True,\n    )\n\n    joblib.dump(\n\
+          \        classifier,\n        model_path,\n    )\n\n    model.metadata[\"\
+          framework\"] = \"scikit-learn\"\n    model.metadata[\"model_type\"] = \"\
+          LogisticRegression\"\n    model.metadata[\"features\"] = X_train.shape[1]\n\
+          \n    logger.info(\n        \"Model saved to: %s\",\n        model_path,\n\
+          \    )\n\n"
+        image: python:3.12-slim
+    exec-validate-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_data(\n    input_dataset: Input[Dataset],\n    validation_report:\
+          \ Output[Artifact],\n):\n    \"\"\"\n    Validate the Telco Customer Churn\
+          \ dataset.\n\n    Produces a JSON validation report.\n    \"\"\"\n    import\
+          \ json\n    import logging\n    from pathlib import Path\n\n    import pandas\
+          \ as pd\n\n    logging.basicConfig(\n        level=logging.INFO,\n     \
+          \   format=\"%(asctime)s | %(levelname)s | %(message)s\",\n    )\n    logger\
+          \ = logging.getLogger(__name__)\n\n    REQUIRED_COLUMNS = [\n        \"\
+          customerID\",\n        \"gender\",\n        \"SeniorCitizen\",\n       \
+          \ \"Partner\",\n        \"Dependents\",\n        \"tenure\",\n        \"\
+          PhoneService\",\n        \"MultipleLines\",\n        \"InternetService\"\
+          ,\n        \"OnlineSecurity\",\n        \"OnlineBackup\",\n        \"DeviceProtection\"\
+          ,\n        \"TechSupport\",\n        \"StreamingTV\",\n        \"StreamingMovies\"\
+          ,\n        \"Contract\",\n        \"PaperlessBilling\",\n        \"PaymentMethod\"\
+          ,\n        \"MonthlyCharges\",\n        \"TotalCharges\",\n        \"Churn\"\
+          ,\n    ]\n\n    CATEGORICAL_VALID_VALUES = {\n        \"gender\": {\"Male\"\
+          , \"Female\"},\n        \"Partner\": {\"Yes\", \"No\"},\n        \"Dependents\"\
+          : {\"Yes\", \"No\"},\n        \"PhoneService\": {\"Yes\", \"No\"},\n   \
+          \     \"MultipleLines\": {\n            \"Yes\",\n            \"No\",\n\
+          \            \"No phone service\",\n        },\n        \"InternetService\"\
+          : {\n            \"DSL\",\n            \"Fiber optic\",\n            \"\
+          No\",\n        },\n        \"OnlineSecurity\": {\n            \"Yes\",\n\
+          \            \"No\",\n            \"No internet service\",\n        },\n\
+          \        \"OnlineBackup\": {\n            \"Yes\",\n            \"No\",\n\
+          \            \"No internet service\",\n        },\n        \"DeviceProtection\"\
+          : {\n            \"Yes\",\n            \"No\",\n            \"No internet\
+          \ service\",\n        },\n        \"TechSupport\": {\n            \"Yes\"\
+          ,\n            \"No\",\n            \"No internet service\",\n        },\n\
+          \        \"StreamingTV\": {\n            \"Yes\",\n            \"No\",\n\
+          \            \"No internet service\",\n        },\n        \"StreamingMovies\"\
+          : {\n            \"Yes\",\n            \"No\",\n            \"No internet\
+          \ service\",\n        },\n        \"Contract\": {\n            \"Month-to-month\"\
+          ,\n            \"One year\",\n            \"Two year\",\n        },\n  \
+          \      \"PaperlessBilling\": {\n            \"Yes\",\n            \"No\"\
+          ,\n        },\n        \"PaymentMethod\": {\n            \"Electronic check\"\
+          ,\n            \"Mailed check\",\n            \"Bank transfer (automatic)\"\
+          ,\n            \"Credit card (automatic)\",\n        },\n        \"Churn\"\
+          : {\n            \"Yes\",\n            \"No\",\n        },\n    }\n\n  \
+          \  NUMERIC_COLUMNS = [\n        \"SeniorCitizen\",\n        \"tenure\",\n\
+          \        \"MonthlyCharges\",\n        \"TotalCharges\",\n    ]\n\n    input_path\
+          \ = Path(input_dataset.path)\n\n    logger.info(\"Loading dataset from:\
+          \ %s\", input_path)\n\n    try:\n        df = pd.read_csv(input_path)\n\
+          \    except Exception as e:\n        raise RuntimeError(f\"Failed to read\
+          \ dataset from {input_path}: {e}\")\n\n    logger.info(\n        \"Dataset\
+          \ shape: %s rows x %s columns\",\n        df.shape[0],\n        df.shape[1],\n\
+          \    )\n\n    errors = []\n    warnings = []\n\n    actual_columns = set(df.columns)\n\
+          \n    missing = set(REQUIRED_COLUMNS) - actual_columns\n    extra = actual_columns\
+          \ - set(REQUIRED_COLUMNS)\n\n    if missing:\n        errors.append(f\"\
+          Missing required columns: {sorted(missing)}\")\n\n    if extra:\n      \
+          \  warnings.append(f\"Unexpected columns found: {sorted(extra)}\")\n\n \
+          \   if df.empty:\n        errors.append(\"Dataset is empty (0 rows)\")\n\
+          \n    duplicate_count = int(df.duplicated().sum())\n\n    if duplicate_count\
+          \ > 0:\n        warnings.append(f\"{duplicate_count} duplicate rows found\"\
+          )\n\n    for col in REQUIRED_COLUMNS:\n        if col in actual_columns:\n\
+          \            null_count = int(df[col].isnull().sum())\n\n            if\
+          \ null_count > 0:\n                warnings.append(f\"Column '{col}' has\
+          \ {null_count} null values\")\n\n    for col, valid_values in CATEGORICAL_VALID_VALUES.items():\n\
+          \n        if col not in actual_columns:\n            continue\n\n      \
+          \  invalid = set(df[col].dropna().unique()) - valid_values\n\n        if\
+          \ invalid:\n            errors.append(f\"Column '{col}' has invalid values:\
+          \ \" f\"{sorted(invalid)}\")\n\n    for col in NUMERIC_COLUMNS:\n\n    \
+          \    if col not in actual_columns:\n            continue\n\n        converted\
+          \ = pd.to_numeric(\n            df[col],\n            errors=\"coerce\"\
+          ,\n        )\n\n        non_numeric = converted.isnull() & df[col].notna()\n\
+          \n        bad_rows = int(non_numeric.sum())\n\n        if bad_rows > 0:\n\
+          \            errors.append(f\"Column '{col}' contains \" f\"{bad_rows} non-numeric\
+          \ values\")\n\n    if \"TotalCharges\" in actual_columns:\n\n        blank_mask\
+          \ = df[\"TotalCharges\"].astype(str).str.strip() == \"\"\n\n        blank_count\
+          \ = int(blank_mask.sum())\n\n        if blank_count > 0:\n            warnings.append(\"\
+          Column 'TotalCharges' has \" f\"{blank_count} blank values\")\n\n    if\
+          \ \"SeniorCitizen\" in actual_columns:\n\n        senior_values = set(\n\
+          \            pd.to_numeric(\n                df[\"SeniorCitizen\"],\n  \
+          \              errors=\"coerce\",\n            )\n            .dropna()\n\
+          \            .unique()\n        )\n\n        invalid_senior = senior_values\
+          \ - {0.0, 1.0}\n\n        if invalid_senior:\n            errors.append(\n\
+          \                \"Column 'SeniorCitizen' has values \"\n              \
+          \  f\"outside {{0, 1}}: {sorted(invalid_senior)}\"\n            )\n\n  \
+          \  report = {\n        \"file\": input_dataset.uri,\n        \"total_rows\"\
+          : int(df.shape[0]),\n        \"total_columns\": int(df.shape[1]),\n    \
+          \    \"duplicates\": duplicate_count,\n        \"is_valid\": len(errors)\
+          \ == 0,\n        \"errors\": errors,\n        \"warnings\": warnings,\n\
+          \    }\n\n    report_path = Path(validation_report.path)\n    report_path.parent.mkdir(parents=True,\
+          \ exist_ok=True)\n\n    report_path.write_text(json.dumps(report, indent=2))\n\
+          \n    logger.info(\n        \"Validation report saved to: %s\",\n      \
+          \  report_path,\n    )\n\n    if errors:\n        logger.error(\n      \
+          \      \"Validation FAILED with %d error(s)\",\n            len(errors),\n\
+          \        )\n\n        for error in errors:\n            logger.error(\"\
+          ERROR: %s\", error)\n\n        raise ValueError(\n            \"Dataset\
+          \ validation failed. \" \"See validation report for details.\"\n       \
+          \ )\n\n    logger.info(\"Validation PASSED\")\n\n    for warning in warnings:\n\
+          \        logger.warning(\"WARN: %s\", warning)\n\n"
+        image: python:3.12-slim
+pipelineInfo:
+  name: telco-churn-pipeline
+root:
+  dag:
+    tasks:
+      clean-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-clean-data
+        dependentTasks:
+        - collect-data
+        - validate-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: collect-data
+            validation_report:
+              taskOutputArtifact:
+                outputArtifactKey: validation_report
+                producerTask: validate-data
+        taskInfo:
+          name: clean-data
+      collect-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-collect-data
+        taskInfo:
+          name: collect-data
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - feature-engineering
+        - train-model
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model
+                producerTask: train-model
+            validation_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: validation_dataset
+                producerTask: feature-engineering
+        taskInfo:
+          name: evaluate-model
+      feature-engineering:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-feature-engineering
+        dependentTasks:
+        - clean-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: clean-data
+        taskInfo:
+          name: feature-engineering
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - feature-engineering
+        inputs:
+          artifacts:
+            train_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: train_dataset
+                producerTask: feature-engineering
+        taskInfo:
+          name: train-model
+      validate-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-validate-data
+        dependentTasks:
+        - collect-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: collect-data
+        taskInfo:
+          name: validate-data
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.0
