@@ -26,8 +26,8 @@ A Kubeflow Pipelines project for the Telco Customer Churn dataset.
 ```
 
 ## Kubeflow Pipeline Run
-<img source="kubeflow-pipeline-run1.png" alt="">
-<img source="kubeflow-pipeline-run2.png" alt="">
+<img src="./kubeflow-pipeline-run1.png" alt="Kubeflow Pipeline Run 1">
+<img src="./kubeflow-pipeline-run2.png" alt="Kubeflow Pipeline Run 2">
 
 
 
