@@ -1,17 +1,20 @@
 from kfp import dsl
+from kfp.dsl import Dataset, Output
 
-@dsl.component(
-        base_image="python:3.12-slim",
-        packages_to_install=["kagglehub"]
-)
-def collect_data(output_dir: str = "data/raw"):
+
+@dsl.component(base_image="python:3.12-slim", packages_to_install=["kagglehub"])
+def collect_data(output_dataset: Output[Dataset]):
     """
-    Download the Telco Customer Churn dataset from Kaggle
+    Download the Telco Customer Churn dataset from Kaggle.
+
+    Produces:
+        output_dataset: Raw Telco Customer Churn CSV.
     """
     import logging
     import shutil
-    import kagglehub
     from pathlib import Path
+
+    import kagglehub
 
     logging.basicConfig(
         level=logging.INFO,
@@ -22,43 +25,39 @@ def collect_data(output_dir: str = "data/raw"):
     DATASET_HANDLE = "blastchar/telco-customer-churn"
     DATASET_FILENAME = "WA_Fn-UseC_-Telco-Customer-Churn.csv"
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    download_dir = Path(output_dataset.path).parent / "kaggle_download"
+    download_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Downloading dataset: %s", DATASET_HANDLE)
 
     downloaded_path = kagglehub.dataset_download(
         DATASET_HANDLE,
-        output_dir=str(output_dir))
+        output_dir=str(download_dir),
+    )
 
     downloaded_path = Path(downloaded_path)
 
-    logger.info("Kaggle download location: %s", downloaded_path)
+    logger.info(
+        "Kaggle download location: %s",
+        downloaded_path,
+    )
 
     csv_candidates = list(downloaded_path.rglob(DATASET_FILENAME))
 
-    direct_csv = output_dir / DATASET_FILENAME
-
-    if direct_csv.exists():
-        source_csv = direct_csv
-    elif csv_candidates:
-        source_csv = csv_candidates[0]
-    else:
+    if not csv_candidates:
         raise FileNotFoundError(
             f"Could not find {DATASET_FILENAME} after downloading "
-            f"{DATASET_HANDLE}.\n"
-            f"Downloaded path: {downloaded_path}")
+            f"{DATASET_HANDLE}. Downloaded path: {downloaded_path}"
+        )
 
-    destination = output_dir / DATASET_FILENAME
+    source_csv = csv_candidates[0]
 
-    if source_csv.resolve() != destination.resolve():
-        shutil.copy2(source_csv, destination)
+    destination = Path(output_dataset.path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Raw dataset saved to: %s", destination)
+    shutil.copy2(source_csv, destination)
 
-    return destination
-
-
-
-if __name__ == "__main__":
-    collect_data()
+    logger.info(
+        "Raw dataset saved to: %s",
+        destination,
+    )
